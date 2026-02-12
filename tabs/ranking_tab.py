@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import io
+import matplotlib.pyplot as plt
 from datetime import datetime
 from utils.visualization import set_style, plot_bar_chart
 from utils.data_loader import convert_duration_to_seconds
