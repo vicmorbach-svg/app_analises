@@ -6,6 +6,13 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
+# --- INJEÇÃO SEGURA DOS SEGREDOS (RAILWAY) ---
+# Lê a variável de ambiente e cria o arquivo TOML nativamente pelo Python
+if "STREAMLIT_SECRETS" in os.environ:
+    os.makedirs(".streamlit", exist_ok=True)
+    with open(".streamlit/secrets.toml", "w", encoding="utf-8") as f:
+        f.write(os.environ["STREAMLIT_SECRETS"])
+
 # --- CONFIGURAÇÃO DO BANCO DE DADOS (POSTGRESQL) ---
 # O Railway fornece a URL, garantimos que comece com postgresql:// para o SQLAlchemy
 db_url = os.environ.get("DATABASE_URL", "")
