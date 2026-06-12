@@ -1,73 +1,107 @@
 import streamlit as st
 import pandas as pd
+import os
+from sqlalchemy import create_engine
 import warnings
 
 warnings.filterwarnings('ignore')
 
-# Configuração da página
-st.set_page_config(
-    page_title="Sistema de Análise de Call Center",
-    page_icon="📞",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# --- CONFIGURAÇÃO DO BANCO DE DADOS (POSTGRESQL) ---
+# O Railway fornece a URL, garantimos que comece com postgresql:// para o SQLAlchemy
+db_url = os.environ.get("DATABASE_URL", "")
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+engine = create_engine(db_url) if db_url else None
+
+st.set_page_config(page_title="Sistema de Análise de Call Center", page_icon="📞", layout="wide")
 
 # Importar tabs
-try:
-    from tabs import upload_tab, rechamadas_tab, motivos_tab, agentes_tab, mailing_tab, ranking_tab
-except ImportError as e:
-    st.error(f"❌ Erro ao importar tabs: {e}")
-    st.stop()
+from tabs import upload_tab, rechamadas_tab, motivos_tab, agentes_tab, mailing_tab, ranking_tab
 
-# Inicialização do session_state
-if 'df_chamadas' not in st.session_state:
-    st.session_state.df_chamadas = None
-if 'df_target' not in st.session_state:
-    st.session_state.df_target = None
-if 'df_tma' not in st.session_state:
-    st.session_state.df_tma = None
-if 'df_desliga' not in st.session_state:
-    st.session_state.df_desliga = None
-if 'df_nota' not in st.session_state:
-    st.session_state.df_nota = None
-if 'rechamadas_detalhe' not in st.session_state:
-    st.session_state.rechamadas_detalhe = None
-if 'rechamadas_result' not in st.session_state:
-    st.session_state.rechamadas_result = None
-if 'df_final_motivos' not in st.session_state:
-    st.session_state.df_final_motivos = None
-if 'operator_performance' not in st.session_state:
-    st.session_state.operator_performance = None
-if 'df_mailing_list' not in st.session_state:
-    st.session_state.df_mailing_list = None
 
-# Título
-st.title("📊 Sistema de Análise de Call Center")
+# --- SISTEMA DE LOGIN ---
+def check_password():
+    def password_entered():
+        user = st.session_state["username"]
+        pwd = st.session_state["password"]
+        if user in st.secrets["passwords"] and pwd == st.secrets["passwords"][user]:
+            st.session_state["password_correct"] = True
+            st.session_state["role"] = st.secrets["roles"][user]
+            del st.session_state["password"] 
+        else:
+            st.session_state["password_correct"] = False
 
-# Tabs
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "📁 Upload de Arquivos",
-    "📞 Análise de Rechamadas",
-    "🔍 Motivos de Rechamadas",
-    "👥 Desempenho de Agentes",
-    "🏆 Ranking",
-    "📧 Lista para Mailing"
-])
+    if "password_correct" not in st.session_state:
+        st.title("🔐 Login - Call Center Analytics")
+        st.text_input("Usuário", key="username")
+        st.text_input("Senha", type="password", key="password")
+        st.button("Entrar", on_click=password_entered)
+        return False
+    elif not st.session_state["password_correct"]:
+        st.title("🔐 Login - Call Center Analytics")
+        st.text_input("Usuário", key="username")
+        st.text_input("Senha", type="password", key="password")
+        st.button("Entrar", on_click=password_entered)
+        st.error("Usuário ou senha incorretos")
+        return False
+    return True
 
-with tab1:
-    upload_tab.show()
+if check_password():
+    # --- CARREGAMENTO E FILTRO GLOBAL DE DADOS ---
+    st.sidebar.header("📅 Filtro Global")
 
-with tab2:
-    rechamadas_tab.show()
+    if engine:
+        try:
+            # Carrega os dados persistidos do PostgreSQL
+            df_chamadas_full = pd.read_sql('SELECT * FROM chamadas', engine, parse_dates=['datetime'])
 
-with tab3:
-    motivos_tab.show()
+            if not df_chamadas_full.empty:
+                min_date = df_chamadas_full['datetime'].min().date()
+                max_date = df_chamadas_full['datetime'].max().date()
 
-with tab4:
-    agentes_tab.show()
+                data_inicio, data_fim = st.sidebar.date_input(
+                    "Selecione o Período", 
+                    [min_date, max_date],
+                    min_value=min_date,
+                    max_value=max_date
+                )
 
-with tab5:
-    ranking_tab.show()
+                # Aplica o filtro
+                mask = (df_chamadas_full['datetime'].dt.date >= data_inicio) & (df_chamadas_full['datetime'].dt.date <= data_fim)
+                st.session_state.df_chamadas = df_chamadas_full[mask]
+            else:
+                st.session_state.df_chamadas = None
+                st.sidebar.info("Nenhum dado de chamadas no banco.")
 
-with tab6:
-    mailing_tab.show()
+        except Exception as e:
+            st.sidebar.warning("Banco de dados vazio ou erro de conexão. Faça o upload.")
+            if 'df_chamadas' not in st.session_state: st.session_state.df_chamadas = None
+    else:
+        st.sidebar.error("Variável DATABASE_URL não configurada no Railway.")
+
+    # Inicializa os outros states necessários
+    for state in ['df_target', 'df_tma', 'df_desliga', 'df_nota', 'df_desempenho', 'df_atendimentos', 'rechamadas_detalhe', 'rechamadas_result', 'df_final_motivos', 'df_ranking', 'df_mailing_list']:
+        if state not in st.session_state:
+            st.session_state[state] = None
+
+    st.title("📊 Sistema de Análise de Call Center")
+    st.sidebar.write(f"👤 Perfil: **{st.session_state['role'].upper()}**")
+
+    # --- CONTROLE DE ACESSO ÀS ABAS ---
+    if st.session_state["role"] == "admin":
+        tabs = st.tabs(["📁 Upload", "📞 Rechamadas", "🔍 Motivos", "👥 Agentes", "🏆 Ranking", "📧 Mailing"])
+        with tabs[0]: upload_tab.show()
+        with tabs[1]: rechamadas_tab.show()
+        with tabs[2]: motivos_tab.show()
+        with tabs[3]: agentes_tab.show()
+        with tabs[4]: ranking_tab.show()
+        with tabs[5]: mailing_tab.show()
+    else:
+        # Usuário comum não vê a aba de Upload
+        tabs = st.tabs(["📞 Rechamadas", "🔍 Motivos", "👥 Agentes", "🏆 Ranking", "📧 Mailing"])
+        with tabs[0]: rechamadas_tab.show()
+        with tabs[1]: motivos_tab.show()
+        with tabs[2]: agentes_tab.show()
+        with tabs[3]: ranking_tab.show()
+        with tabs[4]: mailing_tab.show()
