@@ -1,7 +1,8 @@
 import streamlit as st
 from utils.data_loader import load_file_chamadas, load_file_target, convert_duration_to_seconds
 import pandas as pd
-
+import os
+from sqlalchemy import create_engine
 
 def show():
     st.header("📁 Upload de Arquivos")
@@ -21,20 +22,28 @@ def show():
             st.session_state.df_chamadas = None
         else:
             if not df_chamadas.empty and 'datetime' in df_chamadas.columns and not df_chamadas['datetime'].isna().all():
+
+                # --- SALVANDO NO POSTGRESQL ---
+                db_url = os.environ.get("DATABASE_URL", "")
+                if db_url.startswith("postgres://"):
+                    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+                if db_url:
+                    try:
+                        engine = create_engine(db_url)
+                        # Salva no banco (replace substitui os dados antigos)
+                        df_chamadas.to_sql('chamadas', engine, if_exists='replace', index=False)
+                        st.success(f"✅ Arquivo salvo no banco de dados PostgreSQL! Total: {len(df_chamadas):,}")
+                    except Exception as e:
+                        st.error(f"❌ Erro ao salvar no banco de dados: {e}")
+                else:
+                    st.warning("⚠️ DATABASE_URL não encontrada. Dados salvos apenas na sessão atual.")
+                # -----------------------------------
+
                 st.session_state.df_chamadas = df_chamadas
-                st.success(
-                    f"✅ Arquivo de chamadas carregado com sucesso! "
-                    f"Total de registros: {len(df_chamadas):,}"
-                )
-                st.write(f"Colunas detectadas: {list(df_chamadas.columns)}")
-                st.write("Primeiras 5 linhas do arquivo de chamadas:")
                 st.dataframe(df_chamadas.head())
             else:
-                st.error(
-                    "❌ O arquivo de chamadas carregado está vazio ou não contém datas válidas após o processamento. "
-                    "Verifique o conteúdo do arquivo."
-                )
-                st.session_state.df_chamadas = None
+                st.error("❌ O arquivo está vazio ou sem datas válidas.")
 
     # --- ARQUIVO TARGET ---
     st.subheader("Arquivo Target (para Motivos de Rechamadas)")
