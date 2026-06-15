@@ -89,6 +89,16 @@ def load_file_chamadas(uploaded_file):
             if not dfs:
                 return None, "Nenhum dado válido foi carregado de nenhuma aba do Excel."
 
+        # --- NOVO BLOCO PARA PARQUET ---
+        elif file_extension == 'parquet':
+            try:
+                df_temp = pd.read_parquet(uploaded_file)
+                if not df_temp.empty:
+                    dfs.append(df_temp)
+            except Exception as e:
+                return None, f"Erro ao ler arquivo Parquet: {e}"
+        # ---------------------------
+
         else:
             return None, f"Formato de arquivo não suportado: {file_extension}"
 
@@ -137,6 +147,16 @@ def load_file_target(uploaded_file):
                     dfs.append(df_temp)
             if not dfs:
                 return None, "Nenhum dado válido foi carregado de nenhuma aba do Excel."
+
+        # --- NOVO BLOCO PARA PARQUET ---
+        elif file_extension == 'parquet':
+            try:
+                df_temp = pd.read_parquet(uploaded_file)
+                if not df_temp.empty:
+                    dfs.append(df_temp)
+            except Exception as e:
+                return None, f"Erro ao ler arquivo Parquet: {e}"
+        # -------------------------------
 
         else:
             return None, f"Formato de arquivo não suportado: {file_extension}"
