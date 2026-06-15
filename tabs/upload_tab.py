@@ -7,11 +7,21 @@ from sqlalchemy import create_engine
 def show():
     st.header("📁 Upload de Arquivos")
 
+    # --- CONTROLE DE SALVAMENTO NO BANCO ---
+    st.info("💡 **Configuração de Banco de Dados:** Escolha como os novos dados de chamadas serão salvos.")
+    modo_salvamento = st.radio(
+        "Modo de Salvamento:",
+        options=["Adicionar aos dados existentes (Append)", "Substituir dados existentes (Replace)"],
+        horizontal=True
+    )
+    if_exists_mode = 'append' if 'Adicionar' in modo_salvamento else 'replace'
+    st.divider()
+    
     # --- ARQUIVO DE CHAMADAS ---
     st.subheader("Arquivo de Chamadas")
     uploaded_file_chamadas = st.file_uploader(
-        "Carregar arquivo de chamadas (CSV ou Excel)",
-        type=["csv", "xlsx", "xls"],
+        "Carregar arquivo de chamadas (CSV, Excel ou Parquet)",
+        type=["csv", "xlsx", "xls", "parquet"],
         key="chamadas_upload"
     )
 
@@ -48,8 +58,8 @@ def show():
     # --- ARQUIVO TARGET ---
     st.subheader("Arquivo Target (para Motivos de Rechamadas)")
     uploaded_file_target = st.file_uploader(
-        "Carregar arquivo Target (CSV ou Excel)",
-        type=["csv", "xlsx", "xls"],
+        "Carregar arquivo Target (CSV, Excel ou Parquet)",
+        type=["csv", "xlsx", "xls", "parquet"],
         key="target_upload"
     )
 
