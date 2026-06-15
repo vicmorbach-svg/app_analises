@@ -6,7 +6,6 @@ from datetime import datetime
 from utils.data_loader import analisar_motivos_rechamadas
 from utils.visualization import set_style, plot_bar_chart
 
-
 def explodir_assuntos(df, coluna_assunto, nova_coluna='Assunto'):
     """Explode uma coluna de assuntos em múltiplas linhas, um assunto por linha."""
     s = df[coluna_assunto].astype(str)
@@ -22,7 +21,6 @@ def explodir_assuntos(df, coluna_assunto, nova_coluna='Assunto'):
         (df_exp[nova_coluna] != 'nan')
     ]
     return df_exp
-
 
 def show():
     set_style()
@@ -42,6 +40,11 @@ def show():
         return
 
     df_chamadas = st.session_state.df_chamadas.copy()
+
+    # --- CORREÇÃO 1: Remover duplicatas pelo ID_Conversa para não inflar os cruzamentos ---
+    if 'ID_Conversa' in df_chamadas.columns:
+        df_chamadas = df_chamadas.drop_duplicates(subset=['ID_Conversa']).copy()
+
     rechamadas_detalhe = st.session_state.rechamadas_detalhe
     df_target = st.session_state.df_target.copy()
 
@@ -89,11 +92,23 @@ def show():
             key="id_coluna_target_motivos"
         )
 
-    # Seleção da coluna de assunto
+    # --- CORREÇÃO 2: Inteligência para pré-selecionar a coluna de NOME em vez de CÓDIGO ---
+    opcoes_assunto = list(df_target.columns)
+    idx_assunto = 0
+    for i, col in enumerate(opcoes_assunto):
+        col_lower = col.lower()
+        # Procura palavras que indicam nome/descrição
+        if any(k in col_lower for k in ['assunto', 'motivo', 'nome', 'desc', 'reason', 'wrapup', 'tema']):
+            # Ignora se tiver "id" ou "codigo" no nome
+            if not any(exc in col_lower for exc in ['id', 'cod', 'cód', 'code']):
+                idx_assunto = i
+                break
+
     st.write("**Selecione a coluna de assunto/motivo no Target:**")
     coluna_assunto = st.selectbox(
-        "Coluna de Assunto",
-        options=list(df_target.columns),
+        "Coluna de Assunto/Motivo (⚠️ Escolha a coluna com os NOMES, evite colunas de código)",
+        options=opcoes_assunto,
+        index=idx_assunto,
         key="coluna_assunto"
     )
 
@@ -151,7 +166,7 @@ def show():
 
                 # Salva para uso na parte de análise
                 st.session_state.df_final_motivos = df_final_motivos
-                st.success(f"✅ Cruzamento concluído! {len(df_final_motivos):,} rechamadas com motivos e duração identificados.")
+                st.success(f"✅ Cruzamento concluído! {df_final_motivos['ID_Conversa_Segunda'].nunique():,} rechamadas únicas identificadas.")
 
     # --- EXIBIÇÃO DOS RESULTADOS ---
     if st.session_state.get('df_final_motivos') is None:
@@ -160,37 +175,30 @@ def show():
     df_final_motivos = st.session_state.df_final_motivos
     coluna_assunto = st.session_state.get('coluna_assunto')
 
-    # Nomes das colunas de assunto vindas do target
-    col_assunto_primeira = f'motivo_primeira_{coluna_assunto}'
-    col_assunto_segunda = f'motivo_segunda_{coluna_assunto}'
-
     st.subheader("📊 Métricas Gerais")
 
     col_m1, col_m2 = st.columns(2)
     with col_m1:
-        total_rechamadas = len(df_final_motivos)
-        st.metric("Total de Rechamadas (pares primeira+rechamada)", f"{total_rechamadas:,}")
+        # --- CORREÇÃO 3: Contar apenas IDs únicos da segunda ligação ---
+        total_rechamadas = df_final_motivos['ID_Conversa_Segunda'].nunique()
+        st.metric("Total de Rechamadas (Ligações Únicas)", f"{total_rechamadas:,}")
     with col_m2:
         # Telefones que geraram rechamadas
         total_primeiros_contatos = df_final_motivos['ID_Conversa_Primeira'].nunique()
         st.metric("Total de Primeiros Contatos (que geraram rechamadas)", f"{total_primeiros_contatos:,}")
 
     st.write("**Dados Base (Rechamadas + Motivos + Duração):**")
-    st.dataframe(df_final_motivos, use_container_width=True, height=250)
+    st.dataframe(df_final_motivos, width='stretch', height=250)
 
     # --- PREPARAÇÃO PARA CONTAGEM DE ASSUNTOS ---
     st.subheader("📈 Análise de Assuntos e Duração")
 
-    # Vamos precisar da informação se o cliente é reincidente ou não,
-    # então montamos um DF de todas as chamadas cruzando com df_chamadas original
     df_chamadas_all = df_chamadas.copy()
-    # Quantidade de ligações por telefone
     contagem_tel = df_chamadas_all.groupby('telefone').size()
     df_chamadas_all['total_ligacoes_telefone'] = df_chamadas_all['telefone'].map(contagem_tel)
     df_chamadas_all['cliente_uma_ligacao'] = df_chamadas_all['total_ligacoes_telefone'] == 1
     df_chamadas_all['cliente_reincidente'] = df_chamadas_all['total_ligacoes_telefone'] > 1
 
-    # Precisamos dos assuntos para TODAS as ligações (não só pares de rechamada) → cruzar df_chamadas_all com target
     df_target_temp = df_target.copy()
     df_target_temp[id_coluna_target] = df_target_temp[id_coluna_target].astype(str).str.strip()
 
@@ -202,29 +210,22 @@ def show():
         how='left'
     )
 
-    # Marcar primeira ligação de cada telefone
     df_chamadas_assuntos = df_chamadas_assuntos.sort_values(['telefone', 'datetime'])
     primeira_ligacao_idx = df_chamadas_assuntos.groupby('telefone').head(1).index
     df_chamadas_assuntos['primeira_ligacao'] = False
     df_chamadas_assuntos.loc[primeira_ligacao_idx, 'primeira_ligacao'] = True
 
-    # Explode assuntos de TODAS as ligações
     df_all_assuntos = explodir_assuntos(df_chamadas_assuntos, coluna_assunto, 'Assunto')
 
-    # 1) Consolidado de todas as ligações
     cont_todas = df_all_assuntos['Assunto'].value_counts().rename('Qtd_Todas')
-
-    # 2) Clientes que ligaram apenas uma vez
     df_uma = df_all_assuntos[df_all_assuntos['cliente_uma_ligacao']]
     cont_uma = df_uma['Assunto'].value_counts().rename('Qtd_Clientes_1_Ligacao')
 
-    # 3) Assuntos da primeira ligação dos clientes que ligaram mais de uma vez
     df_primeiras_reinc = df_all_assuntos[
         df_all_assuntos['cliente_reincidente'] & df_all_assuntos['primeira_ligacao']
     ]
     cont_primeiras_reinc = df_primeiras_reinc['Assunto'].value_counts().rename('Qtd_Primeiras_Reincidentes')
 
-    # 4) Assuntos das rechamadas (segunda ligação nos pares)
     all_rech = []
     for periodo, dados in rechamadas_detalhe.items():
         for item in dados:
@@ -246,7 +247,6 @@ def show():
         df_rech_assuntos = explodir_assuntos(df_rech, coluna_assunto, 'Assunto')
         cont_rech = df_rech_assuntos['Assunto'].value_counts().rename('Qtd_Rechamadas')
 
-        # Tempo por assunto nas rechamadas
         temp_rech = df_rech_assuntos.groupby('Assunto')['duracao_segundos'].agg(['sum', 'mean']).rename(
             columns={'sum': 'Tempo_Total_Rech_Seg', 'mean': 'TMA_Rech_Seg'}
         )
@@ -254,11 +254,9 @@ def show():
         cont_rech = pd.Series(dtype=int, name='Qtd_Rechamadas')
         temp_rech = pd.DataFrame(columns=['Tempo_Total_Rech_Seg', 'TMA_Rech_Seg']).set_index(pd.Index([], name='Assunto'))
 
-    # 5) Total de cada assunto para clientes que ligaram mais de uma vez (todas as ligações deles)
     df_reinc_all = df_all_assuntos[df_all_assuntos['cliente_reincidente']]
     cont_reinc_total = df_reinc_all['Assunto'].value_counts().rename('Qtd_Total_Reincidentes')
 
-    # Tempo por assunto na PRIMEIRA ligação (clientes reincidentes)
     if not df_primeiras_reinc.empty:
         temp_primeiras = df_primeiras_reinc.groupby('Assunto')['duracao_segundos'].agg(['sum', 'mean']).rename(
             columns={'sum': 'Tempo_Total_Prim_Seg', 'mean': 'TMA_Prim_Seg'}
@@ -266,7 +264,6 @@ def show():
     else:
         temp_primeiras = pd.DataFrame(columns=['Tempo_Total_Prim_Seg', 'TMA_Prim_Seg']).set_index(pd.Index([], name='Assunto'))
 
-    # Consolida tudo em um único DataFrame
     assuntos_index = sorted(
         set(cont_todas.index) |
         set(cont_uma.index) |
@@ -285,13 +282,11 @@ def show():
 
     resumo = resumo.fillna(0)
 
-    # Converte tempos para minutos para exibição
     resumo['Tempo_Total_Prim_Min'] = (resumo['Tempo_Total_Prim_Seg'] / 60).round(1)
     resumo['TMA_Prim_Min'] = (resumo['TMA_Prim_Seg'] / 60).round(1)
     resumo['Tempo_Total_Rech_Min'] = (resumo['Tempo_Total_Rech_Seg'] / 60).round(1)
     resumo['TMA_Rech_Min'] = (resumo['TMA_Rech_Seg'] / 60).round(1)
 
-    # Ordena por quantidade total
     resumo = resumo.astype({
         'Qtd_Todas': 'int64',
         'Qtd_Clientes_1_Ligacao': 'int64',
@@ -301,16 +296,16 @@ def show():
     }).sort_values('Qtd_Todas', ascending=False).reset_index()
 
     st.write("""
-- **Qtd_Todas**: vezes que o assunto aparece em todas as ligações  
-- **Qtd_Clientes_1_Ligacao**: vezes que o assunto aparece em clientes que ligaram apenas 1 vez  
-- **Qtd_Primeiras_Reincidentes**: vezes que o assunto aparece na **primeira ligação** de clientes que ligaram mais de 1 vez  
-- **Qtd_Rechamadas**: vezes que o assunto aparece nas ligações identificadas como rechamadas  
-- **Qtd_Total_Reincidentes**: vezes que o assunto aparece em **todas as ligações** de clientes que ligaram mais de 1 vez  
-- **Tempo_Total_Prim_Min / TMA_Prim_Min**: tempo total e TMA das primeiras ligações (reincidentes) por assunto  
-- **Tempo_Total_Rech_Min / TMA_Rech_Min**: tempo total e TMA das rechamadas por assunto  
+- **Qtd_Todas**: vezes que o assunto aparece em todas as ligações
+- **Qtd_Clientes_1_Ligacao**: vezes que o assunto aparece em clientes que ligaram apenas 1 vez
+- **Qtd_Primeiras_Reincidentes**: vezes que o assunto aparece na **primeira ligação** de clientes que ligaram mais de 1 vez
+- **Qtd_Rechamadas**: vezes que o assunto aparece nas ligações identificadas como rechamadas
+- **Qtd_Total_Reincidentes**: vezes que o assunto aparece em **todas as ligações** de clientes que ligaram mais de 1 vez
+- **Tempo_Total_Prim_Min / TMA_Prim_Min**: tempo total e TMA das primeiras ligações (reincidentes) por assunto
+- **Tempo_Total_Rech_Min / TMA_Rech_Min**: tempo total e TMA das rechamadas por assunto
     """)
 
-    st.dataframe(resumo, use_container_width=True)
+    st.dataframe(resumo, width='stretch')
 
     # Gráficos (Top 15)
     top = resumo.head(15)
