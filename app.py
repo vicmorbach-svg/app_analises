@@ -110,6 +110,7 @@ else:
     st.sidebar.header("📅 Filtro Global")
 
     if engine:
+        # 1. Carrega e filtra a tabela principal (Chamadas)
         try:
             df_chamadas_full = pd.read_sql('SELECT * FROM chamadas', engine, parse_dates=['datetime'])
 
@@ -133,6 +134,23 @@ else:
         except Exception as e:
             st.sidebar.warning("Banco de dados vazio ou erro de conexão. Faça o upload.")
             if 'df_chamadas' not in st.session_state: st.session_state.df_chamadas = None
+
+        # 2. Carrega as tabelas secundárias automaticamente para a sessão
+        tabelas_secundarias = {
+            'target': 'df_target',
+            'nota': 'df_nota',
+            'desempenho': 'df_desempenho',
+            'atendimentos': 'df_atendimentos'
+        }
+
+        for tabela, state_key in tabelas_secundarias.items():
+            if st.session_state.get(state_key) is None:
+                try:
+                    df_temp = pd.read_sql(f'SELECT * FROM {tabela}', engine)
+                    if not df_temp.empty:
+                        st.session_state[state_key] = df_temp
+                except Exception:
+                    pass # A tabela pode ainda não existir no banco, o que é normal
     else:
         st.sidebar.error("Variável DATABASE_URL não configurada no Railway.")
 
