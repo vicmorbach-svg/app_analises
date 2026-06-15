@@ -15,6 +15,15 @@ def show():
 
     df = st.session_state.df_chamadas.copy()
 
+    if st.session_state.get('df_chamadas') is None:
+        st.warning("⚠️ Nenhum dado de chamadas carregado. Por favor, faça o upload do arquivo na aba 'Upload de Arquivos'.")
+        return
+
+    df = st.session_state.df_chamadas.copy()
+
+    # --- CORREÇÃO: Remove duplicatas para garantir que cada ligação seja contada apenas uma vez ---
+    df = df.drop_duplicates(subset=['ID_Conversa']).copy()
+
     st.subheader("Configurações da Análise")
 
     # REMOVIDOS OS PARÂMETROS DE TEMPO, POIS OS INTERVALOS SÃO FIXOS (0-24h, 24-48h, 48-72h)
