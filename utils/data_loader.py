@@ -525,7 +525,7 @@ def faixas_ligacoes_e_reincidentes(df):
     if 'telefone' not in df.columns:
         return {}, 0, pd.Series()
 
-    contagem_por_telefone = df.groupby("telefone").size()
+    contagem_por_telefone = df.groupby("telefone")['Id_Conversa'].nunique()
     faixas = {
         '1 ligação': len(contagem_por_telefone[contagem_por_telefone == 1]),
         '2-5 ligações': len(contagem_por_telefone[(contagem_por_telefone >= 2) & (contagem_por_telefone <= 5)]),
