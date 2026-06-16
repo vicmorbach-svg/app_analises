@@ -30,16 +30,41 @@ def show():
     # 2. CONSOLIDAÇÃO DOS DADOS
     # ============================================================
     if st.button("🔄 Consolidar Dados dos Agentes", type="primary"):
-        with st.spinner("Consolidando dados..."):
-            # Merge usando Nome_Agente como chave (case-insensitive)
+        with st.spinner("Consolidando e agrupando dados..."):
+
+            # --- CORREÇÃO: AGRUPAR DADOS ANTES DO MERGE ---
+
+            # 1. Agrupar arquivo de Desempenho
+            df_perf['Atendidas'] = pd.to_numeric(df_perf['Atendidas'], errors='coerce').fillna(0)
+            df_perf['Transferidas'] = pd.to_numeric(df_perf['Transferidas'], errors='coerce').fillna(0)
+            df_perf['TMA_Segundos'] = pd.to_numeric(df_perf['TMA_Segundos'], errors='coerce').fillna(0)
+            df_perf['Conversa_Max_Segundos'] = pd.to_numeric(df_perf['Conversa_Max_Segundos'], errors='coerce').fillna(0)
+
+            df_perf_agg = df_perf.groupby('Nome_Agente').agg({
+                'Atendidas': 'sum',
+                'Transferidas': 'sum',
+                'TMA_Segundos': 'mean', # Média do TMA
+                'Conversa_Max_Segundos': 'max' # Maior tempo de conversa
+            }).reset_index()
+
+            # 2. Agrupar arquivo de Notas
+            df_nota['Notas_Atendente'] = pd.to_numeric(df_nota['Notas_Atendente'], errors='coerce').fillna(0)
+            df_nota['CSAT'] = pd.to_numeric(df_nota['CSAT'], errors='coerce').fillna(0)
+
+            df_nota_agg = df_nota.groupby('Nome_Agente').agg({
+                'Notas_Atendente': 'sum', # Soma total de avaliações recebidas
+                'CSAT': 'mean' # Média da nota CSAT
+            }).reset_index()
+
+            # 3. Merge usando os DataFrames já agrupados (1 linha por agente)
             df_consolidado = pd.merge(
-                df_perf,
-                df_nota,
+                df_perf_agg,
+                df_nota_agg,
                 on='Nome_Agente',
                 how='outer'
             )
 
-            # Preenche valores faltantes
+            # Preenche valores faltantes gerados pelo outer join
             df_consolidado = df_consolidado.fillna({
                 'Atendidas': 0,
                 'TMA_Segundos': 0,
@@ -54,15 +79,13 @@ def show():
             # ========================================================
             antes_exclusao = len(df_consolidado)
 
-            # Converte para numérico e remove zeros/nulls
-            df_consolidado['Atendidas'] = pd.to_numeric(df_consolidado['Atendidas'], errors='coerce')
             df_consolidado = df_consolidado[df_consolidado['Atendidas'] > 0].copy()
 
             depois_exclusao = len(df_consolidado)
             agentes_excluidos = antes_exclusao - depois_exclusao
 
             if agentes_excluidos > 0:
-                st.warning(f"⚠️ {agentes_excluidos} agentes foram excluídos por não terem atendimentos (Atendidas = 0 ou null)")
+                st.warning(f"⚠️ {agentes_excluidos} agentes foram excluídos por não terem atendimentos (Atendidas = 0)")
 
             # ========================================================
             # 2.2 CÁLCULO DAS MÉTRICAS DERIVADAS
@@ -77,12 +100,6 @@ def show():
             # ========================================================
             # 2.3 CÁLCULO CORRETO DO ENCAMINHAMENTO PARA PESQUISA
             # ========================================================
-            # Garante que Transferidas seja numérico
-            df_consolidado['Transferidas'] = pd.to_numeric(
-                df_consolidado['Transferidas'], 
-                errors='coerce'
-            ).fillna(0)
-
             # Calcula o percentual de encaminhamento para pesquisa
             df_consolidado['Perc_Encaminhamento_Pesquisa'] = (
                 (df_consolidado['Transferidas'] / df_consolidado['Atendidas']) * 100
@@ -96,7 +113,7 @@ def show():
 
             # Salva no session_state
             st.session_state.df_agentes_consolidado = df_consolidado
-            st.success(f"✅ Dados consolidados! {len(df_consolidado)} agentes ativos.")
+            st.success(f"✅ Dados consolidados! {len(df_consolidado)} agentes únicos ativos.")
 
     # ============================================================
     # 3. EXIBIÇÃO DOS RESULTADOS
@@ -173,7 +190,7 @@ def show():
         # Formata a coluna do agente para exibição (primeira letra maiúscula)
         df_display['Agente'] = df_display['Agente'].str.title()
 
-        st.dataframe(df_display, use_container_width=True)
+        st.dataframe(df_display, width='stretch')
 
         # ========================================================
         # 3.3 GRÁFICOS DE ANÁLISE
