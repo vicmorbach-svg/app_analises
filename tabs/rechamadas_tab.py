@@ -27,7 +27,7 @@ def show():
     st.subheader("Configurações da Análise")
 
     # REMOVIDOS OS PARÂMETROS DE TEMPO, POIS OS INTERVALOS SÃO FIXOS (0-24h, 24-48h, 48-72h)
-    valor_ligacao = st.number_input("Valor médio por ligação (para cálculo de impacto financeiro)", value=7.56, min_value=0.01, format="%.2f")
+    valor_ligacao = st.number_input("Valor médio por ligação (para cálculo de impacto financeiro)", value=8.01, min_value=0.01, format="%.2f")
     min_ligacoes_graf = st.number_input("Mínimo de ligações para um telefone aparecer no gráfico de reincidência", value=2, min_value=1)
 
     if st.button("Executar Análise de Rechamadas"):
